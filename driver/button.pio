@@ -63,12 +63,12 @@ static inline void button_init(PIO pio, uint offset, uint button_gpio) {
 }
 
 
-static inline bool button_get_state(uint32_t & button_state) {
+static inline bool button_get_state(uint32_t * button_state) {
     int n;
 
     n = pio_sm_get_rx_fifo_level(button_pio, button_sm);
     if (n > 0) {
-        button_state = pio_sm_get_blocking(button_pio, button_sm);
+        *button_state = pio_sm_get_blocking(button_pio, button_sm);
         return true;
     }
 

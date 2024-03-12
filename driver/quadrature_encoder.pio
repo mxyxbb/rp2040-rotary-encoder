@@ -91,57 +91,77 @@ increment_cont:
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
 
-static PIO quadrature_pio;
-static uint quadrature_sm;
+
+// one pio has four sm, so four encoders can be read. The four sm will be
+// claimed one by one from 1 to 4. Passing number of encoders to number_of_qua.
+// And the first pins of the 4(or 3,2,1) encoders to pins[4].
+
+typedef struct {
+    PIO pio;
+    uint number_of_qua; // max to 4
+    uint pins[4];
+    int count_new[4];
+    int count_old[4];
+} quadrature_t;
 
 // max_step_rate is used to lower the clock of the state machine to save power
 // if the application doesn't require a very high sampling rate. Passing zero
 // will set the clock to the maximum
 
-static inline void quadrature_encoder_program_init(PIO pio, uint pin, int max_step_rate)
+static inline void quadrature_encoder_program_init(quadrature_t qua, int max_step_rate)
 {
-    quadrature_pio = pio;
-    quadrature_sm = pio_claim_unused_sm(quadrature_pio, true);
+    for (uint i = 0; i < qua.number_of_qua; i++)
+    {
+        uint button_sm = i;
+        pio_sm_set_consecutive_pindirs(qua.pio, button_sm, qua.pin[i], 2, false);
+        gpio_pull_up(qua.pins[i]);
+        gpio_pull_up(qua.pins[i] + 1);
 
-    pio_sm_set_consecutive_pindirs(quadrature_pio, quadrature_sm, pin, 2, false);
-    gpio_pull_up(pin);
-    gpio_pull_up(pin + 1);
+    
+        pio_sm_config c = quadrature_encoder_program_get_default_config(0);
 
-    pio_sm_config c = quadrature_encoder_program_get_default_config(0);
+        sm_config_set_in_pins(&c, qua.pin[i]); // for WAIT, IN
+        sm_config_set_jmp_pin(&c, qua.pin[i]); // for JMP
+        // shift to left, autopull disabled
+        sm_config_set_in_shift(&c, false, false, 32);
+        // don't join FIFO's
+        sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_NONE);
 
-    sm_config_set_in_pins(&c, pin); // for WAIT, IN
-    sm_config_set_jmp_pin(&c, pin); // for JMP
-    // shift to left, autopull disabled
-    sm_config_set_in_shift(&c, false, false, 32);
-    // don't join FIFO's
-    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_NONE);
+        // passing "0" as the sample frequency,
+        if (max_step_rate == 0) {
+            sm_config_set_clkdiv(&c, 1.0);
+        } else {
+            // one state machine loop takes at most 10 cycles
+            float div = (float)clock_get_hz(clk_sys) / (10 * max_step_rate);
+            sm_config_set_clkdiv(&c, div);
+        }
 
-    // passing "0" as the sample frequency,
-    if (max_step_rate == 0) {
-        sm_config_set_clkdiv(&c, 1.0);
-    } else {
-        // one state machine loop takes at most 10 cycles
-        float div = (float)clock_get_hz(clk_sys) / (10 * max_step_rate);
-        sm_config_set_clkdiv(&c, div);
+        pio_sm_init(qua.pio, button_sm, 0, &c);
+        pio_sm_set_enabled(qua.pio, button_sm, true);
     }
-
-    pio_sm_init(quadrature_pio, quadrature_sm, 0, &c);
-    pio_sm_set_enabled(quadrature_pio, quadrature_sm, true);
 }
 
-static inline int32_t quadrature_encoder_get_count(void)
+static inline void quadrature_encoder_get_count(quadrature_t* qua)
 {
     uint ret;
     int n;
-
-    // if the FIFO has N entries, we fetch them to drain the FIFO,
-    // plus one entry which will be guaranteed to not be stale
-    n = pio_sm_get_rx_fifo_level(quadrature_pio, quadrature_sm) + 1;
-    while (n > 0) {
-        ret = pio_sm_get_blocking(quadrature_pio, quadrature_sm);
-        n--;
+    for (uint i = 0; i < qua->number_of_qua; i++)
+    {
+        uint button_sm = i;
+        // if the FIFO has N entries, we fetch them to drain the FIFO,
+        // plus one entry which will be guaranteed to not be stale
+        n = pio_sm_get_rx_fifo_level(qua->pio, button_sm) + 1;
+        while (n > 0) {
+            if(pio_sm_is_rx_fifo_empty(qua->pio, button_sm))
+                ret = qua->count_new[i];
+            else
+                ret = pio_sm_get(qua->pio, button_sm);
+            n--;
+        }
+        qua->count_new[i]=ret;
     }
-    return ret;
+    
+
 }
 
 %}
