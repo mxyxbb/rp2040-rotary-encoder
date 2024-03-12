@@ -8,14 +8,28 @@ the pins are A, C, B.
 
 ![picture of encoder pins](doc/encoder-pins.png)
 
+
+Knob1 connection
 ```
-Pico GPIO | Pico Pin | Knob pin
+Pico GPIO | Knob pin
+----------+--------------------------
+GPIO 21   | A
+GND       | C (center on 3-pin side)
+GPIO 20   | B
 ----------+----------+--------------------------
-GPIO 0    | 1        | A
-GND       | 3        | C (center on 3-pin side)
-GPIO 1    | 2        | B
+GND       | either pin on 2-pin side
+GPIO 2    | other pin on 2-pin side
 ----------+----------+--------------------------
-GND       | 38       | either pin on 2-pin side
-GPIO 2    | 4        | other pin on 2-pin side
+```
+Knob2 connection
+```
+Pico GPIO | Knob pin
+----------+--------------------------
+GPIO 17   | A
+GND       | C (center on 3-pin side)
+GPIO 18   | B
+----------+----------+--------------------------
+GND       | either pin on 2-pin side
+Not Connected | other pin on 2-pin side
 ----------+----------+--------------------------
 ```
